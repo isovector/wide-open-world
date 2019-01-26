@@ -25,6 +25,7 @@ dependencies:
 - containers
 - bytes
 - bytestring
+- HTTP
 
 library:
   source-dirs: src

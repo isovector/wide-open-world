@@ -5,13 +5,14 @@
 
 module Language.Haskell.WideOpenWorld where
 
-import           Data.Bytes.Serial
-import           Data.Bytes.Put
+import qualified Data.ByteString.Lazy.Char8 as B
 import           Data.Bytes.Get
+import           Data.Bytes.Put
+import           Data.Bytes.Serial
 import qualified Data.Map as M
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
-import qualified Data.ByteString.Lazy.Char8 as B
+import           Network.HTTP (simpleHTTP, getRequest, getResponseBody)
 
 deriving instance Serial AnnTarget
 deriving instance Serial Bang
@@ -93,6 +94,10 @@ initializeDatabase = do
 
 loadInstance :: Name -> Name -> Q [Dec]
 loadInstance tname iname = do
-  db <- runIO $ runGetL deserialize <$> B.readFile "/home/sandy/wow.db"
+  -- db <- runIO $ runGetL deserialize <$> B.readFile "/home/sandy/wow.db"
+  db <- runIO $ do
+    resp <- simpleHTTP $ getRequest "http://reasonablypolymorphic.com/wow.db"
+    body <- getResponseBody resp
+    pure $ runGetL deserialize $ B.pack $ body
   maybe (error "no instance") pure $ curry M.lookup tname iname db
 
