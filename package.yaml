@@ -21,6 +21,8 @@ description:         Please see the README on GitHub at <https://github.com/isov
 
 dependencies:
 - base >= 4.7 && < 5
+- template-haskell
+- containers
 
 library:
   source-dirs: src
