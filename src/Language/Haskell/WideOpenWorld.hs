@@ -68,15 +68,22 @@ deriving instance Serial TypeFamilyHead
 
 deriving instance Serial Name
 
+
+-- TODO(sandy): delete me
 data Foo = Foo
   deriving Show
 
 
+------------------------------------------------------------------------------
+-- | 'IORef' for the cached database.
+-- TODO(sandy): delete this when i have an API
 dbRef :: IORef (Maybe (M.Map Type [Dec]))
 dbRef = unsafePerformIO $ newIORef Nothing
 {-# NOINLINE dbRef #-}
 
 
+------------------------------------------------------------------------------
+-- | Get the database, initializing it from the internet if necessary.
 getDB :: Q (M.Map Type [Dec])
 getDB = runIO $ do
   cached <- readIORef dbRef
@@ -90,12 +97,17 @@ getDB = runIO $ do
       pure db
 
 
+------------------------------------------------------------------------------
+-- | Stupid instance for testing.
 numList :: Q [Dec]
 numList = [d|
   instance Num [a] where
     fromInteger _ = []
   |]
 
+
+------------------------------------------------------------------------------
+-- | Stupid instance for testing.
 fooSemigroup :: Q [Dec]
 fooSemigroup = [d|
   instance Semigroup Foo where
@@ -103,6 +115,8 @@ fooSemigroup = [d|
   |]
 
 
+------------------------------------------------------------------------------
+-- | Stupid instance for testing.
 fooMonoid :: Q [Dec]
 fooMonoid = [d|
   instance Monoid Foo where
@@ -110,19 +124,22 @@ fooMonoid = [d|
   |]
 
 
+------------------------------------------------------------------------------
+-- | Get the head of an instance.
 instanceHead :: Dec -> Q Type
-instanceHead (InstanceD _ _ t _) = pure t
+instanceHead (InstanceD _ _ t _) = pure $ normalizeHead t
 instanceHead x = fail $ "Not an instance declaration: " ++ show x
 
 
-normalizedName :: Int -> Name
-normalizedName n = Name (OccName "wow") (NameU n)
-
-
+------------------------------------------------------------------------------
+-- | Normalize the type variables in an instance head so we can do a lookup
+-- against them that is immune to name choices.
 normalizeHead :: Type -> Type
 normalizeHead = flip evalState (0, M.empty)
               . everywhereM (mkM renameU)
   where
+    normalizedName n = Name (OccName "wow") (NameU n)
+
     renameU (Name (OccName _) (NameU n)) = do
       m <- gets snd
       case M.lookup n m of
@@ -135,10 +152,12 @@ normalizeHead = flip evalState (0, M.empty)
     renameU z = pure z
 
 
+-- TODO(sandy): delete me after the API --- just use instancehead and normalize instead
 sig1 :: Q [Dec] -> Q Type
-sig1 = (fmap head . traverse (fmap normalizeHead . instanceHead) =<<)
+sig1 = (fmap head . traverse instanceHead =<<)
 
 
+-- TODO(sandy): delete me; just useful for testing without an API
 inMemory' :: Q (M.Map Type (Q [Dec]))
 inMemory' = do
   fooSemiT   <- sig1 [d| instance Semigroup Foo |]
@@ -151,6 +170,9 @@ inMemory' = do
     ]
 
 
+------------------------------------------------------------------------------
+-- | Save 'inMemory'' to disk
+-- TODO(sandy): delete me
 initializeDatabase :: Q [Dec]
 initializeDatabase = do
   x <- sequenceA =<< inMemory'
@@ -158,9 +180,11 @@ initializeDatabase = do
   pure []
 
 
+------------------------------------------------------------------------------
+-- | Fetch the definitions of instances just given their head.
 load :: Q [Dec] -> Q [Dec]
 load instsDQ = do
   db <- getDB
-  nheads <- traverse (fmap normalizeHead . instanceHead) =<< instsDQ
+  nheads <- traverse instanceHead =<< instsDQ
   pure . join . for nheads $ (db M.!)
 
