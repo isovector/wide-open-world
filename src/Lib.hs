@@ -4,9 +4,8 @@ module Lib where
 
 import Language.Haskell.WideOpenWorld
 
-loadInstance ''Foo ''Semigroup
-loadInstance ''Foo ''Monoid
+load [d| instance Num [boo] |]
 
-test :: Foo
-test = mempty
+-- test :: Foo
+-- test = mempty
 

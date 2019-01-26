@@ -26,6 +26,9 @@ dependencies:
 - bytes
 - bytestring
 - HTTP
+- syb
+- transformers
+- mtl
 
 library:
   source-dirs: src
