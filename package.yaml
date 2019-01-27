@@ -29,6 +29,7 @@ dependencies:
 - syb
 - transformers
 - mtl
+- ghc
 
 library:
   source-dirs: src

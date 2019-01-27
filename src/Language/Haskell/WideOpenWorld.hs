@@ -3,11 +3,13 @@
 {-# LANGUAGE QuasiQuotes        #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# OPTIONS_GHC -fplugin=Language.Haskell.WideOpenWorld.Plugin #-}
 
 module Language.Haskell.WideOpenWorld where
 
 import           Control.Arrow (first, second)
 import           Control.Monad.State
+import           Convert (convertToHsDecls)
 import qualified Data.ByteString.Lazy.Char8 as B
 import           Data.Bytes.Get
 import           Data.Bytes.Put
@@ -16,10 +18,14 @@ import           Data.IORef
 import qualified Data.Map as M
 import           Data.Traversable
 import           Generics.SYB hiding (Fixity (..))
-import           Language.Haskell.TH
+import           Language.Haskell.TH hiding (ppr)
 import           Language.Haskell.TH.Syntax
 import           Network.HTTP (simpleHTTP, getRequest, getResponseBody)
+import           SrcLoc (noSrcSpan)
 import           System.IO.Unsafe
+import Outputable
+import RnSource
+
 
 deriving instance Serial AnnTarget
 deriving instance Serial Bang
@@ -187,4 +193,5 @@ load instsDQ = do
   db <- getDB
   nheads <- traverse instanceHead =<< instsDQ
   pure . join . for nheads $ (db M.!)
+
 

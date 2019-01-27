@@ -4,7 +4,9 @@ module Lib where
 
 import Language.Haskell.WideOpenWorld
 
-load [d| instance Num [boo] |]
+cool [d| instance Semigroup Foo where (<>) _ _ = Foo |]
+
+-- load [d| instance Num [boo] |]
 
 -- test :: Foo
 -- test = mempty
