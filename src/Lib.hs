@@ -1,13 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fplugin=Language.Haskell.WideOpenWorld.Plugin -dppr-debug -ddump-simpl -dsuppress-all #-}
 
 module Lib where
 
-import Language.Haskell.WideOpenWorld
-
-cool [d| instance Semigroup Foo where (<>) _ _ = Foo |]
-
--- load [d| instance Num [boo] |]
-
--- test :: Foo
--- test = mempty
+test :: Int
+test = 5 <> 6
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE TupleSections         #-}
 
 module Language.Haskell.WideOpenWorld.Plugin where
 
@@ -8,6 +9,7 @@ import Control.Monad
 import Data.Foldable
 
 import GHC.WhyArentYouExported
+import Data.List (uncons)
 
 -- GHC API
 import Module (mkModuleName)
@@ -22,7 +24,7 @@ import MkCore
 import TyCon
 import Type
 import CoreSyn
-import Outputable
+import Outputable hiding ((<>))
 import           SrcLoc (noSrcSpan)
 import Language.Haskell.TH hiding (Type, ppr)
 import RnSource
@@ -42,15 +44,13 @@ plugin = defaultPlugin { tcPlugin = const (Just jdiPlugin) }
 
 jdiPlugin :: TcPlugin
 jdiPlugin =
-  TcPlugin { tcPluginInit  = lookupJDITyCon
+  TcPlugin { tcPluginInit  = pure ()
            , tcPluginSolve = solveJDI
            , tcPluginStop  = const (return ())
            }
 
 lookupJDITyCon :: TcPluginM Class
 lookupJDITyCon = do
-    env <- getTopEnv
-    unsafeTcPluginTcM $ cool env stuff
     Found _ md   <- findImportedModule jdiModule Nothing
     jdiTcNm <- lookupOrig md (mkTcOcc "JustDoIt")
     tcLookupClass jdiTcNm
@@ -64,42 +64,42 @@ wrap cls = EvExpr . appDc
     dc = tyConSingleDataCon tyCon
     appDc x = mkCoreConApps dc [Type (exprType x), x]
 
+
 findClassConstraint :: Class -> Ct -> Maybe (Ct, Type)
 findClassConstraint cls ct = do
     (cls', [t]) <- getClassPredTys_maybe (ctPred ct)
     guard (cls' == cls)
     return (ct, t)
 
-solveJDI :: Class -- ^ JDI's TyCon
+
+solveJDI :: () -- ^ JDI's TyCon
          -> [Ct]  -- ^ [G]iven constraints
          -> [Ct]  -- ^ [D]erived constraints
          -> [Ct]  -- ^ [W]anted constraints
          -> TcPluginM TcPluginResult
-solveJDI jdiCls _ _ wanteds = pure $ TcPluginOk [] []
-    -- return $! case result of
-    --     Left x       -> TcPluginContradiction [x]
-    --     Right solved -> TcPluginOk solved []
-  -- where
-    -- our_wanteds = mapMaybe (findClassConstraint jdiCls) wanteds
-    -- result = partitionMaybe (fmap (wrap jdiCls) . solve) our_wanteds
+solveJDI jdiCls _ _ wanteds = do
+  if (not $ null wanteds)
+     then do
+        pprTraceM "what" (ppr wanteds)
+        e <- unsafeTcPluginTcM $ cool stuff
+        pure $ TcPluginOk (fmap (e,) wanteds) []
+     else pure $ TcPluginOk [] []
 
 
-cool :: HscEnv -> [Dec] -> TcM ()
-cool env z = do
+cool :: [Dec] -> TcM EvTerm
+cool z = do
   let Right m = convertToHsDecls noSrcSpan z
   l <- tcRnSrcDecls m
-  -- (gbl, lcl) <- tcTopSrcDecls l
-  -- tcTopSrcDecls <-- need to zonk before dsTopLHsBinds
   x <- initDsTc $ dsTopLHsBinds $ tcg_binds l
-  pprPanic "help" $ ppr $ tail $ fromOL x
+  let Just (dict, binds) = uncons $ drop 2 $ fromOL x
+      ev = mkLetRec binds $ snd dict
+  pure $ EvExpr ev
 
 
 stuff :: [Dec]
 stuff =
   [InstanceD Nothing []
-    (AppT (ConT ''Num)
-      (AppT ListT (VarT $ Name (OccName "a") (NameU 0))))
-        [FunD 'fromInteger [Clause [WildP] (NormalB (ListE [])) []]]]
+    (AppT (ConT ''Semigroup)
+      (ConT ''Int))
+        [FunD '(<>) [Clause [] (NormalB (VarE '(+))) []]]]
 
-
--- dsTopLHsBinds

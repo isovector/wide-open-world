@@ -3,7 +3,6 @@
 {-# LANGUAGE QuasiQuotes        #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell    #-}
-{-# OPTIONS_GHC -fplugin=Language.Haskell.WideOpenWorld.Plugin #-}
 
 module Language.Haskell.WideOpenWorld where
 
