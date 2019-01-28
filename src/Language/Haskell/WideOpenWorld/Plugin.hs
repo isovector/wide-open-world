@@ -7,6 +7,8 @@ import Data.Maybe
 import Control.Monad
 import Data.Foldable
 
+import GHC.WhyArentYouExported
+
 -- GHC API
 import Module (mkModuleName)
 import OccName (mkTcOcc)
@@ -32,6 +34,7 @@ import TcRnDriver
 import DsBinds
 import HscTypes
 import DsMonad
+import OrdList
 
 
 plugin :: Plugin
@@ -84,15 +87,11 @@ solveJDI jdiCls _ _ wanteds = pure $ TcPluginOk [] []
 cool :: HscEnv -> [Dec] -> TcM ()
 cool env z = do
   let Right m = convertToHsDecls noSrcSpan z
-  (k, _) <- findSplice m
-  (_, l) <- rnTopSrcDecls k
-  (gbl, lcl) <- tcTopSrcDecls l
+  l <- tcRnSrcDecls m
+  -- (gbl, lcl) <- tcTopSrcDecls l
   -- tcTopSrcDecls <-- need to zonk before dsTopLHsBinds
-  x <- initDsTc $ dsTopLHsBinds $ tcg_binds gbl
-
-  -- (_, x, y) <- tcInstDecls1 $ (group_instds =<<) $ hs_tyclds l
-  -- undefined_
-  pprPanic "help" $ ppr $ length $ toList x
+  x <- initDsTc $ dsTopLHsBinds $ tcg_binds l
+  pprPanic "help" $ ppr $ tail $ fromOL x
 
 
 stuff :: [Dec]
