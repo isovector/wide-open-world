@@ -32,8 +32,6 @@ import TcType
 import Type
 import Unsafe.Coerce
 
-newtype IOEnv' env a = IOEnv' (env -> IO a)
-
 
 plugin :: Plugin
 plugin = defaultPlugin { tcPlugin = const (Just jdiPlugin) }
@@ -41,27 +39,45 @@ plugin = defaultPlugin { tcPlugin = const (Just jdiPlugin) }
 jdiPlugin :: TcPlugin
 jdiPlugin =
   TcPlugin { tcPluginInit  = pure ()
-           , tcPluginSolve = solveJDI
-           , tcPluginStop  = const (return ())
+           , tcPluginSolve = const solveJDI
+           , tcPluginStop  = const $ pure ()
            }
 
 
-solveJDI :: () -- ^ JDI's TyCon
-         -> [Ct]  -- ^ [G]iven constraints
-         -> [Ct]  -- ^ [D]erived constraints
-         -> [Ct]  -- ^ [W]anted constraints
+------------------------------------------------------------------------------
+-- | This constructor isn't exposed so I just copied it and 'unsafeCoerce' it
+-- later. See 'localIOEnv'.
+newtype IOEnv' env a = IOEnv' (env -> IO a)
+
+
+------------------------------------------------------------------------------
+-- | The main solver.
+solveJDI :: [Ct]
+         -> [Ct]
+         -> [Ct]
          -> TcPluginM TcPluginResult
-solveJDI _ [] [] wanteds = do
+solveJDI [] [] wanteds = do
   if (not $ null wanteds)
      then do
-        pprTraceM "what" (ppr wanteds)
-        (bs, e, _, cts) <- unsafeTcPluginTcM $ cool stuff2
+        -- For the time being, just always return the instance corresponding to
+        -- 'stuff2'.
+        (bs, e, _, cts) <- unsafeTcPluginTcM $ buildInstance stuff2
+
+        -- Emit a wanted for everything in the instance context. Keep track of
+        -- their evidence vars.
         ctevs <- for cts (newWanted $ ctLoc $ head wanteds)
         let ctevids = fmap (Var . ctEvEvId) ctevs
+
+        -- Spit out the evidence as top level binds.
         for_ bs setEvBind
-        pure $ TcPluginOk (fmap (EvExpr $ Var e `mkApps` ctevids,) wanteds) []
+
+        pure $ TcPluginOk
+          -- Give back evidence for the constraint, applying the wanted
+          -- evidence.
+          (fmap (EvExpr $ Var e `mkApps` ctevids,) wanteds)
+          []
      else pure $ TcPluginOk [] []
-solveJDI _ g d w = pprPanic "YO" $ ppr $ g ++ d ++ w
+solveJDI g d w = pprPanic "YO" $ ppr $ g ++ d ++ w
 
 
 localIOEnv :: (g -> g) -> IOEnv (Env g l) a -> IOEnv (Env g l) a
@@ -76,8 +92,8 @@ getContext :: Kind -> ([TyVar], [PredType])
 getContext k = (\(ts, a, _) -> (ts, a)) $ tcSplitSigmaTy k
 
 
-cool :: Dec -> TcM ([EvBind], Var, [TyVar], [PredType])
-cool z = localIOEnv clearTcGblEnv $ do
+buildInstance :: Dec -> TcM ([EvBind], Var, [TyVar], [PredType])
+buildInstance z = localIOEnv clearTcGblEnv $ do
   let Right m = convertToHsDecls noSrcSpan [z]
   l <- tcRnSrcDecls m
   x <- initDsTc $ dsTopLHsBinds $ tcg_binds l
