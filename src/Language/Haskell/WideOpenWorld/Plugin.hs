@@ -1,36 +1,39 @@
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE TupleSections         #-}
-{-# OPTIONS_GHC -Wall         #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Language.Haskell.WideOpenWorld.Plugin
   ( plugin
   , stuff
   ) where
 
-import Control.Arrow (second)
-import Convert (convertToHsDecls)
-import CoreSyn
-import Data.Foldable
-import Data.Traversable
-import DsBinds
-import DsMonad
-import GHC (idType)
-import GHC.WhyArentYouExported
-import IOEnv
-import InstEnv
-import Language.Haskell.TH hiding (Type, ppr, Kind)
-import Language.Haskell.TH.Syntax hiding (Type, Kind)
-import Language.Haskell.WideOpenWorld.Test
-import OrdList
-import Outputable hiding ((<>))
-import Plugins (Plugin (..), defaultPlugin)
-import SrcLoc (noSrcSpan)
-import TcEvidence
-import TcPluginM
-import TcRnTypes
-import TcType
-import Type
-import Unsafe.Coerce
+import           Control.Arrow (second)
+import           Convert (convertToHsDecls)
+import           CoreSyn
+import           Data.Foldable
+import qualified Data.Map as M
+import           Data.Maybe (mapMaybe)
+import           Data.Traversable
+import           Data.Tuple (swap)
+import           DsBinds
+import           DsMonad
+import           GHC (idType)
+import           GHC.WhyArentYouExported
+import           IOEnv
+import           InstEnv
+import           Language.Haskell.TH hiding (Type, ppr, Kind, match)
+import           Language.Haskell.TH.Syntax hiding (Type, Kind)
+import           Language.Haskell.WideOpenWorld.Test
+import           OrdList
+import           Outputable hiding ((<>))
+import           Plugins (Plugin (..), defaultPlugin)
+import           SrcLoc (noSrcSpan)
+import           TcEvidence
+import           TcPluginM
+import           TcRnTypes
+import           TcType
+import           Type
+import           Unsafe.Coerce
 
 
 plugin :: Plugin
@@ -59,13 +62,18 @@ solveJDI :: [Ct]
 solveJDI [] [] wanteds = do
   if (not $ null wanteds)
      then do
+        let w = head $ wanteds
         -- For the time being, just always return the instance corresponding to
         -- 'stuff2'.
-        (bs, e, _, cts) <- unsafeTcPluginTcM $ buildInstance stuff2
+        (bs, e, cts) <- unsafeTcPluginTcM $ buildInstance stuff2
+        let (tys, _, inst) = tcSplitSigmaTy $ idType $ e
+            mmap = match inst $ ctPred $ w
+            instTys = (mmap M.!) <$> tys
+
 
         -- Emit a wanted for everything in the instance context. Keep track of
         -- their evidence vars.
-        ctevs <- for cts (newWanted $ ctLoc $ head wanteds)
+        ctevs <- for (instantiateHead mmap <$> cts) . newWanted $ ctLoc w
         let ctevids = fmap (Var . ctEvEvId) ctevs
 
         -- Spit out the evidence as top level binds.
@@ -74,11 +82,20 @@ solveJDI [] [] wanteds = do
         pure $ TcPluginOk
           -- Give back evidence for the constraint, applying the wanted
           -- evidence.
-          (fmap (EvExpr $ Var e `mkApps` ctevids,) wanteds)
-          []
+          (fmap (EvExpr $ Var e `mkTyApps` instTys `mkApps` ctevids,) wanteds)
+          (mkNonCanonical <$> ctevs)
      else pure $ TcPluginOk [] []
-solveJDI g d w = pprPanic "YO" $ ppr $ g ++ d ++ w
+solveJDI g d w = pure $ TcPluginOk [] []
 
+
+instantiateHead
+    :: M.Map TyVar Type
+    -> Type
+    -> Type
+instantiateHead mmap t =
+  let (tc, tys) = splitAppTys t
+      tys' = fmap (\ty -> maybe ty (mmap M.!) $ getTyVar_maybe ty) tys
+   in mkAppTys tc tys'
 
 localIOEnv :: (g -> g) -> IOEnv (Env g l) a -> IOEnv (Env g l) a
 localIOEnv f m
@@ -92,7 +109,7 @@ getContext :: Kind -> ([TyVar], [PredType])
 getContext k = (\(ts, a, _) -> (ts, a)) $ tcSplitSigmaTy k
 
 
-buildInstance :: Dec -> TcM ([EvBind], Var, [TyVar], [PredType])
+buildInstance :: Dec -> TcM ([EvBind], Var, [PredType])
 buildInstance z = localIOEnv clearTcGblEnv $ do
   let Right m = convertToHsDecls noSrcSpan [z]
   l <- tcRnSrcDecls m
@@ -102,7 +119,21 @@ buildInstance z = localIOEnv clearTcGblEnv $ do
       evBinds = fmap (uncurry mkGivenEvBind . second EvExpr)
               $ binds
       (tys, cts) = getContext $ head $ fmap (idType . is_dfun) $ tcg_insts l
-  pure (evBinds, dict, tys, cts)
+  pure (evBinds, dict, cts)
+
+
+match
+    :: PredType  -- class inst
+    -> PredType  -- concrete type
+    -> M.Map TyVar Type
+match instClass concClass =
+  let Just (_, instHead) = splitAppTy_maybe instClass
+      Just (_, concHead) = splitAppTy_maybe concClass
+      (_, instTys) = splitAppTys instHead
+      (_, concTys) = splitAppTys concHead
+   in M.fromList . mapMaybe (fmap swap . sequence . second getTyVar_maybe)
+                 $ zip concTys instTys
+
 
 
 stuff :: Dec

@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fplugin=Language.Haskell.WideOpenWorld.Plugin -dsuppress-all -dcore-lint #-}
+{-# OPTIONS_GHC -fplugin=Language.Haskell.WideOpenWorld.Plugin -dcore-lint #-}
 
 module Lib where
 
