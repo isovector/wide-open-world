@@ -1,5 +1,6 @@
 module GHC.WhyArentYouExported
   ( tcRnSrcDecls
+  , clearTcGblEnv
   ) where
 
 import Bag
