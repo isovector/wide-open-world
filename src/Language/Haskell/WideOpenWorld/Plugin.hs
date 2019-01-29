@@ -19,7 +19,6 @@ import Data.Maybe
 import DsBinds
 import DsMonad
 import GHC.WhyArentYouExported
-import HsDecls
 import HscTypes
 import Language.Haskell.TH hiding (Type, ppr)
 import Language.Haskell.TH.Syntax hiding (Type)
@@ -87,15 +86,25 @@ solveJDI jdiCls _ _ wanteds = do
   if (not $ null wanteds)
      then do
         pprTraceM "what" (ppr wanteds)
-        (bs, e) <- unsafeTcPluginTcM $ cool env stuff
+        (bs, e) <- unsafeTcPluginTcM $ cool env stuff2
         for_ bs setEvBind
         pure $ TcPluginOk (fmap (e,) wanteds) []
      else pure $ TcPluginOk [] []
 
+
+localIOEnv :: (g -> g) -> IOEnv (Env g l) a -> IOEnv (Env g l) a
+localIOEnv f m
+  = unsafeCoerce
+  . IOEnv'
+  $ flip runIOEnv m
+  . \env -> env { env_gbl = f $ env_gbl env }
+
+
 cool :: TcGblEnv -> [Dec] -> TcM ([EvBind], EvTerm)
-cool env z = unsafeCoerce $ IOEnv' $ \env -> runIOEnv (env { env_gbl = clearTcGblEnv $ env_gbl env } ) $ do
+cool env z = localIOEnv clearTcGblEnv $ do
   let Right m = convertToHsDecls noSrcSpan z
   l <- tcRnSrcDecls m
+  pprPanic "hi" $ ppr $ tcg_binds l
   x <- initDsTc $ dsTopLHsBinds $ tcg_binds l
   let binds = drop 1 $ fromOL x
       dict = fst $ head binds
@@ -104,11 +113,6 @@ cool env z = unsafeCoerce $ IOEnv' $ \env -> runIOEnv (env { env_gbl = clearTcGb
       ev = mkLetRec binds $ Var dict
       newName = mkLocalVar (idDetails dict)
   pure $ (evBinds, EvExpr $ Var dict )
-  -- pure $ EvExpr $ everywhere (mkT $ changeExport $ varUnique dict) ev
-    where
-      changeExport uniq z
-        | varUnique z == uniq = setIdNotExported z
-        | otherwise = z
 
 
 stuff :: [Dec]
@@ -117,4 +121,10 @@ stuff =
     (AppT (ConT ''Semigroup)
       (ConT ''Int))
         [FunD '(<>) [Clause [] (NormalB (VarE 'ok)) []]]]
+
+stuff2 :: [Dec]
+stuff2 =
+  [InstanceD Nothing [AppT (ConT ''Num) a] (AppT (ConT ''Num) (AppT ListT a))
+    [ValD (VarP 'fromInteger) (NormalB (InfixE (Just (VarE 'pure)) (VarE '(.)) (Just (VarE 'fromInteger)))) []]]
+  where a = VarT $ Name (OccName "a") (NameU 0)
 

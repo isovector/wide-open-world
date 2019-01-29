@@ -7,9 +7,6 @@ module Lib where
 --   (<>) = ok
 --   {-# NOINLINE (<>) #-}
 
-test :: Int
-test = 5 <> 6
-
-test2 :: Int
-test2 = test <> test
+test :: [Int]
+test = 5
 
