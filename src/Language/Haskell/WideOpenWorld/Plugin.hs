@@ -7,6 +7,7 @@ module Language.Haskell.WideOpenWorld.Plugin
   ) where
 
 import           Control.Arrow (second)
+import           Control.Monad (join)
 import           Convert (convertToHsDecls)
 import           CoreSyn
 import           Data.Foldable
@@ -22,6 +23,7 @@ import           Language.Haskell.TH hiding (Type, ppr, Kind, match)
 import           Language.Haskell.TH.Syntax hiding (Type, Kind)
 import           Language.Haskell.WideOpenWorld.Test
 import           OrdList
+import           Outputable hiding ((<>))
 import           Plugins (Plugin (..), defaultPlugin)
 import           SrcLoc (noSrcSpan)
 import           TcEvidence
@@ -41,6 +43,9 @@ plugin = defaultPlugin
   }
 
 
+findDec :: PredType -> Maybe Dec
+findDec = const $ pure stuff2
+
 
 ------------------------------------------------------------------------------
 -- | The main solver.
@@ -48,33 +53,27 @@ solve :: [Ct]
       -> [Ct]
       -> [Ct]
       -> TcPluginM TcPluginResult
-solve [] [] wanteds = do
-  if (not $ null wanteds)
-     then do
-        let w = head $ wanteds
-        -- For the time being, just always return the instance corresponding to
-        -- 'stuff2'.
-        (bs, e, cts) <- unsafeTcPluginTcM $ buildInstance stuff2
-        let (tys, _, inst) = tcSplitSigmaTy $ idType $ e
-            mmap = match inst $ ctPred $ w
-            instTys = (mmap M.!) <$> tys
+solve _ _ wanteds = do
+  (new, solved) <- fmap sequenceA . for wanteds $ \w -> do
+    (bs, e, cts) <- unsafeTcPluginTcM $ buildInstance stuff2
 
+    let (tys, _, inst) = tcSplitSigmaTy $ idType e
+        mmap = match inst $ ctPred $ w
+        instTys = (mmap M.!) <$> tys
 
-        -- Emit a wanted for everything in the instance context. Keep track of
-        -- their evidence vars.
-        ctevs <- for (instantiateHead mmap <$> cts) . newWanted $ ctLoc w
-        let ctevids = fmap (Var . ctEvEvId) ctevs
+    -- Emit a wanted for everything in the instance context. Keep track of
+    -- their evidence vars.
+    ctevs <- for (instantiateHead mmap <$> cts) . newWanted $ ctLoc w
+    let ctevids = fmap (Var . ctEvEvId) ctevs
 
-        -- Spit out the evidence as top level binds.
-        for_ bs setEvBind
-
-        pure $ TcPluginOk
-          -- Give back evidence for the constraint, applying the wanted
-          -- evidence.
-          (fmap (EvExpr $ Var e `mkTyApps` instTys `mkApps` ctevids,) wanteds)
-          (mkNonCanonical <$> ctevs)
-     else pure $ TcPluginOk [] []
-solve _ _ _ = pure $ TcPluginOk [] []
+    -- Spit out the evidence as top level binds.
+    for_ bs setEvBind
+    pure ( mkNonCanonical <$> ctevs
+           -- Give back evidence for the constraint, applying the wanted
+           -- evidence.
+         , (EvExpr $ Var e `mkTyApps` instTys `mkApps` ctevids, w)
+         )
+  pure $ TcPluginOk solved new
 
 
 getContext :: Kind -> [PredType]
