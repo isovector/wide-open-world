@@ -6,22 +6,26 @@ module Language.Haskell.WideOpenWorld.Plugin
   ( plugin
   ) where
 
+import           Control.Applicative
 import           Control.Arrow (second)
 import           Control.Monad (join)
 import           Convert (convertToHsDecls)
 import           CoreSyn
 import           Data.Foldable
+import           Data.List (intercalate, isInfixOf)
 import qualified Data.Map as M
 import           Data.Traversable
 import           DsBinds
 import           DsMonad
 import           GHC (idType)
+import           GHC.NameViolation (showName, violateName)
 import           GHC.Plugin.Utils
 import           GHC.WhyArentYouExported
 import           InstEnv
-import           Language.Haskell.TH hiding (Type, ppr, Kind, match)
-import           Language.Haskell.TH.Syntax hiding (Type, Kind)
+import           Language.Haskell.TH hiding (Type, ppr, Kind, match, showName)
+import           Language.Haskell.TH.Syntax hiding (Type, Kind, showName)
 import           Language.Haskell.WideOpenWorld.Test
+import           Name (getName)
 import           OrdList
 import           Outputable hiding ((<>))
 import           Plugins (Plugin (..), defaultPlugin)
@@ -31,6 +35,20 @@ import           TcPluginM
 import           TcRnTypes
 import           TcType
 import           Type
+
+
+hash :: Type -> String
+hash t =
+  let (c, as) = splitTyConApp t
+      cName = getName c
+      aNames = (\a -> parenthesize . maybe (hash a) (showName . violateName . getName) $ getTyVar_maybe a) <$> as
+   in intercalate " " $ showName (violateName cName) : aNames
+
+parenthesize :: String -> String
+parenthesize a@('(' : _) = a
+parenthesize a
+  | isInfixOf " " a = "(" ++ a ++ ")"
+  | otherwise = a
 
 
 plugin :: Plugin
@@ -60,6 +78,7 @@ solve _ _ wanteds = do
     let (tys, _, inst) = tcSplitSigmaTy $ idType e
         mmap = match inst $ ctPred $ w
         instTys = (mmap M.!) <$> tys
+    pprTraceM "hash" $ text $ hash inst
 
     -- Emit a wanted for everything in the instance context. Keep track of
     -- their evidence vars.
