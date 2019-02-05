@@ -3,6 +3,6 @@
 module Lib where
 
 
-test :: [a]
+test :: [Int]
 test = 5
 

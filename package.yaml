@@ -35,7 +35,7 @@ library:
   source-dirs: src
 
 executables:
-  wide-open-world-exe:
+  wide-open-world-server:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -44,6 +44,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - wide-open-world
+    - containers
+    - servant
+    - servant-server
+    - free
 
 tests:
   wide-open-world-test:

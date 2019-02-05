@@ -20,10 +20,10 @@ import           Generics.SYB hiding (Fixity (..))
 import           Language.Haskell.TH hiding (ppr)
 import           Language.Haskell.TH.Syntax
 import           Network.HTTP (simpleHTTP, getRequest, getResponseBody)
+import           Outputable
+import           RnSource
 import           SrcLoc (noSrcSpan)
 import           System.IO.Unsafe
-import Outputable
-import RnSource
 
 
 deriving instance Serial AnnTarget

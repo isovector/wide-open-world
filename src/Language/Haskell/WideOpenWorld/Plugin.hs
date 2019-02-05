@@ -12,6 +12,7 @@ import           Control.Monad (join)
 import           Convert (convertToHsDecls)
 import           CoreSyn
 import           Data.Foldable
+import           Data.Functor ((<&>))
 import           Data.List (intercalate, isInfixOf)
 import qualified Data.Map as M
 import           Data.Traversable
@@ -25,6 +26,7 @@ import           InstEnv
 import           Language.Haskell.TH hiding (Type, ppr, Kind, match, showName)
 import           Language.Haskell.TH.Syntax hiding (Type, Kind, showName)
 import           Language.Haskell.WideOpenWorld.Test
+import           Language.Haskell.WideOpenWorld.Types
 import           Name (getName)
 import           OrdList
 import           Outputable hiding ((<>))
@@ -41,14 +43,22 @@ hash :: Type -> String
 hash t =
   let (c, as) = splitTyConApp t
       cName = getName c
-      aNames = (\a -> parenthesize . maybe (hash a) (showName . violateName . getName) $ getTyVar_maybe a) <$> as
+      aNames = as <&> \a -> maybe (hash a)
+                                  (showName . violateName . getName)
+                          $ getTyVar_maybe a
    in intercalate " " $ showName (violateName cName) : aNames
 
-parenthesize :: String -> String
-parenthesize a@('(' : _) = a
-parenthesize a
-  | isInfixOf " " a = "(" ++ a ++ ")"
-  | otherwise = a
+wow :: Type -> WowType
+wow = runTI 0 . wow'
+  where
+    wow' t =
+      case getTyVar_maybe t of
+        Just a -> TyVar <$> findOrFresh (+1) a
+        Nothing -> do
+          let (c, as) = splitTyConApp t
+              cName = getName c
+          aNames <- traverse wow' as
+          pure $ TyApp (showName (violateName cName)) aNames
 
 
 plugin :: Plugin
@@ -78,7 +88,7 @@ solve _ _ wanteds = do
     let (tys, _, inst) = tcSplitSigmaTy $ idType e
         mmap = match inst $ ctPred $ w
         instTys = (mmap M.!) <$> tys
-    pprTraceM "hash" $ text $ hash inst
+    pprTraceM "hash" $ text $ show $ wow inst
 
     -- Emit a wanted for everything in the instance context. Keep track of
     -- their evidence vars.
